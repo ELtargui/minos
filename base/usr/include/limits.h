@@ -1,0 +1,24 @@
+#pragma once
+
+#define PAGESIZE 0x1000
+#define PAGE_SIZE PAGESIZE
+#define PATH_MAX 255
+
+#define CHAR_BIT 8
+#define WORD_BIT 32
+#define LONG_BIT 32
+
+#define INT8_MIN -128
+#define INT8_MAX 127
+#define UINT8_MAX 255
+
+#define INT16_MIN -32768
+#define INT16_MAX 32767
+#define UINT16_MAX 65535
+
+#define INT32_MIN (-2147483647L - 1)
+#define INT32_MAX 2147483647L
+#define UINT32_MAX 4294967295UL
+
+#define INT_MAX INT32_MAX
+#define INT_MIN INT32_MIN
