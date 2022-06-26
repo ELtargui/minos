@@ -5,27 +5,32 @@
 #include <unistd.h>
 #include <min/inflate.h>
 
-// typedef struct inflate
-// {
-//     void *inparam;
-//     void *outparam;
-//     int (*get)(void *);
-//     int (*put)(void *, int);
+typedef enum INFERR
+{
+    INF_OK = 0,
+    INF_RE,
+    INF_WE,
+} InfErr_t;
 
-//     uint8_t *window;
-//     int winsize;
-//     int winpos;
+typedef struct huffman
+{
+    short *count;
+    short *symbol;
+} huffman_t;
 
-//     uint8_t bits;
-//     int bits_cnt;
-// } inflate_t;
+static void inf_error(inflate_t *inf, char *msg)
+{
+    fprintf(stderr, "inflate error %d :: %s", inf->error, msg);
+    assert(0);
+}
 
 static uint8_t read_u8(inflate_t *inf)
 {
     int e = inf->get(inf->inparam);
     if (e < 0)
     {
-        assert(0);
+        inf->error = INF_RE;
+        inf_error(inf, "stream read error");
         return 0;
     }
 
@@ -42,15 +47,15 @@ static uint16_t read_u16(inflate_t *inf)
 
 static int read_bit(inflate_t *inf)
 {
-    if (inf->bits_cnt == 0)
+    if (inf->bitsLeft == 0)
     {
-        inf->bits = read_u8(inf);
-        inf->bits_cnt = 8;
+        inf->bitsBuffer = read_u8(inf);
+        inf->bitsLeft = 8;
     }
 
-    int b = inf->bits & 0x01;
-    inf->bits >>= 1;
-    inf->bits_cnt--;
+    int b = inf->bitsBuffer & 0x01;
+    inf->bitsBuffer >>= 1;
+    inf->bitsLeft--;
     return b;
 }
 
@@ -66,10 +71,10 @@ static uint32_t read_bits(inflate_t *inf, int n)
     return r;
 }
 
-static void clear_bits(inflate_t *inf)
+static void clear_bitsBuffer(inflate_t *inf)
 {
-    inf->bits_cnt = 0;
-    inf->bits = 0;
+    inf->bitsLeft = 0;
+    inf->bitsBuffer = 0;
 }
 
 static void write_u8(inflate_t *inf, uint8_t x)
@@ -77,7 +82,8 @@ static void write_u8(inflate_t *inf, uint8_t x)
     int e = inf->put(inf->outparam, x);
     if (e < 0)
     {
-        assert(0);
+        inf->error = INF_WE;
+        inf_error(inf, "write u8");
         return;
     }
 
@@ -86,33 +92,69 @@ static void write_u8(inflate_t *inf, uint8_t x)
         inf->winpos = 0;
 
     inf->window[inf->winpos++] = x;
+    // inf->outSize++;
 }
 
-static int uncompressed_block(inflate_t *inf)
+static void inf_uncompressed(inflate_t *inf)
 {
-    clear_bits(inf);
+    clear_bitsBuffer(inf);
     int len = read_u16(inf);
     int nlen = read_u16(inf);
 
     if ((nlen & 0xffff) != (~len & 0xffff))
     {
-        return -1;
+        inf->error = 0;
+        inf_error(inf, "uncompressed block check");
+        return;
     }
 
     for (int i = 0; i < len; i++)
     {
         write_u8(inf, read_u8(inf));
     }
+}
+
+int huffman_build_tree(huffman_t *tree, short *lengths, int len)
+{
+    for (int i = 0; i < 16; i++)
+    {
+        tree->count[i] = 0;
+    }
+
+    for (int i = 0; i < len; i++)
+    {
+        tree->count[lengths[i]]++;
+    }
+
+    if (tree->count[0] == len)
+    {
+        fprintf(stderr, "error : complete ?");
+    }
+
+    short offs[16];
+
+    int c = 0;
+    offs[0] = 0;
+    for (int i = 1; i < 16; i++)
+    {
+        offs[i] = c;
+        c += tree->count[i];
+    }
+
+    //sorting
+    for (int i = 0; i < len; i++)
+    {
+        if (lengths[i] != 0)
+        {
+            tree->symbol[offs[lengths[i]]] = i;
+            offs[lengths[i]]++;
+        }
+    }
+
     return 0;
 }
 
-typedef struct huffman_tree
-{
-    short *count;
-    short *symbols;
-} huffman_tree_t;
-
-static int huffman_decode_symbole(inflate_t *inf, huffman_tree_t *tree)
+static int huffman_decodeSym(inflate_t *inf, huffman_t *tree, short *symbol)
 {
     int code = 0;
     int count = 0;
@@ -126,7 +168,8 @@ static int huffman_decode_symbole(inflate_t *inf, huffman_tree_t *tree)
 
         if (code - count < first)
         {
-            return tree->symbols[index + (code - first)];
+            *symbol = tree->symbol[index + (code - first)];
+            return 0;
         }
 
         first += count;
@@ -135,10 +178,11 @@ static int huffman_decode_symbole(inflate_t *inf, huffman_tree_t *tree)
         code <<= 1;
     }
 
+    inf_error(inf, "error out of codes");
     return -1;
 }
 
-static int inflate_codes(inflate_t *inf, huffman_tree_t *len_tree, huffman_tree_t *dist_tree)
+static int inflateCodes(inflate_t *inf, huffman_t *len_tree, huffman_t *dist_tree)
 {
     static const short litlen[] = {3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51,
                                    59, 67, 83, 99, 115, 131, 163, 195, 227, 258};
@@ -152,48 +196,52 @@ static int inflate_codes(inflate_t *inf, huffman_tree_t *len_tree, huffman_tree_
     static const short distsExtra[] = {0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10,
                                        10, 11, 11, 12, 12, 13, 13};
 
+    short symbol;
     int len;
     int dist;
 
-    while (1)
+    while (inf->error == 0)
     {
         //decode literal/length value from input stream
-        int symbole = huffman_decode_symbole(inf, len_tree);
 
-        if (symbole < 0)
+        if (huffman_decodeSym(inf, len_tree, &symbol))
         {
+            inf_error(inf, "error inavalide symbole");
             return -1;
         }
-        if (symbole < 256)
+        if (symbol < 256)
         {
             //copy value (literal byte) to output stream
-            write_u8(inf, symbole);
+            write_u8(inf, symbol);
         }
         else
         {
-            if (symbole == 256)
+            if (symbol == 256)
             {
                 //EOB
-                fprintf(stderr, "end of block\n");
+                fprintf(stderr, "end of block");
                 return 0;
             }
-            else if (symbole >= 257 && symbole <= 285)
+            else if (symbol >= 257 && symbol <= 285)
             {
                 //decode distance from input stream
-                symbole -= 257;
-                if (symbole >= 29)
+                symbol -= 257;
+                if (symbol >= 29)
                 {
+                    inf->error = symbol;
+                    inf_error(inf, "inavalid code(symbol)");
                     return -5;
                 }
 
-                len = litlen[symbole] + read_bits(inf, litlenExtra[symbole]);
+                len = litlen[symbol] + read_bits(inf, litlenExtra[symbol]);
 
-                symbole = huffman_decode_symbole(inf, dist_tree);
-                if (symbole < 0)
+                symbol = 0;
+                if (huffman_decodeSym(inf, dist_tree, &symbol))
                 {
+                    inf_error(inf, "tree decode error");
                     return -1;
                 }
-                dist = dists[symbole] + read_bits(inf, distsExtra[symbole]);
+                dist = dists[symbol] + read_bits(inf, distsExtra[symbol]);
 
                 int pos = 0;
                 if (dist > inf->winpos)
@@ -216,71 +264,26 @@ static int inflate_codes(inflate_t *inf, huffman_tree_t *len_tree, huffman_tree_
             }
         }
     }
-    return 0;
+    return 1;
 }
 
-static int build_huffman_tree(huffman_tree_t *tree, short *lengths, int cnt)
+static void inf_fixed(inflate_t *inf)
 {
-    for (int i = 0; i < 16; i++)
+    static huffman_t lenCode;
+    static huffman_t distCode;
+
+    static short len_count[16];
+    static short len_sym[288];
+    static short dist_count[16];
+    static short dist_sym[30];
+
+    static int build = 1;
+    if (build)
     {
-        tree->count[i] = 0;
-    }
-
-    for (int i = 0; i < cnt; i++)
-    {
-        tree->count[lengths[i]]++;
-    }
-
-    if (tree->count[0] == cnt)
-    {
-        fprintf(stderr, "error : complete ?");
-        assert(0);
-        return -1;
-    }
-
-    short offsets[16];
-    int c = 0;
-
-    offsets[0] = 0;
-    for (int i = 1; i < 16; i++)
-    {
-        offsets[i] = c;
-        c += tree->count[i];
-    }
-
-    //sorting
-    for (int i = 0; i < cnt; i++)
-    {
-        if (lengths[i] != 0)
-        {
-            tree->symbols[offsets[lengths[i]]] = i;
-            offsets[lengths[i]]++;
-        }
-    }
-
-    return 0;
-}
-
-static int fixed_hufman_tree_builded = 0;
-
-static int fixed_block(inflate_t *inf)
-{
-    static huffman_tree_t len_tree;
-    static huffman_tree_t dist_tree;
-
-    if (!fixed_hufman_tree_builded)
-    {
-        static short len_count[16];
-        static short dist_count[16];
-
-        static short len_symbols[288];
-        static short dist_symbols[30];
-
-        len_tree.count = len_count;
-        len_tree.symbols = len_symbols;
-
-        dist_tree.count = dist_count;
-        dist_tree.symbols = dist_symbols;
+        lenCode.count = len_count;
+        lenCode.symbol = len_sym;
+        distCode.count = dist_count;
+        distCode.symbol = dist_sym;
 
         short lengths[288];
         int i = 0;
@@ -302,28 +305,34 @@ static int fixed_block(inflate_t *inf)
             lengths[i] = 8;
         }
 
-        build_huffman_tree(&len_tree, lengths, 288);
+        huffman_build_tree(&lenCode, lengths, 288);
         for (i = 0; i < 30; i++)
         {
             lengths[i] = 5;
         }
-        build_huffman_tree(&dist_tree, lengths, 30);
+        huffman_build_tree(&distCode, lengths, 30);
 
-        fixed_hufman_tree_builded = 1;
+        build = 0;
     }
 
-    return inflate_codes(inf, &len_tree, &dist_tree);
+    inflateCodes(inf, &lenCode, &distCode);
 }
 
-static int dynamic_block(inflate_t *inf)
+static void inf_dynamic(inflate_t *inf)
 {
+    huffman_t lenCodes;
+    huffman_t distCodes;
+
     static short len_count[16];
     static short len_sym[286];
     static short dist_count[16];
     static short dist_sym[30];
 
-    huffman_tree_t len_tree = {.count = len_count, .symbols = len_sym};
-    huffman_tree_t dist_tree = {.count = dist_count, .symbols = dist_sym};
+    lenCodes.count = len_count;
+    lenCodes.symbol = len_sym;
+
+    distCodes.count = dist_count;
+    distCodes.symbol = dist_sym;
 
     short nlen = read_bits(inf, 5) + 257;
     short ndist = read_bits(inf, 5) + 1;
@@ -331,8 +340,10 @@ static int dynamic_block(inflate_t *inf)
 
     if (nlen > 286 || ndist > 30 || ncode > 19)
     {
+        inf->error = 5;
         fprintf(stderr, "error nlen:%i, ndist:%i, ncode:%i", nlen, ndist, ncode);
-        return -1;
+        inf_error(inf, "inavalide vals {nlen ndist ncode}");
+        return;
     }
 
     static const short order[] = {16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15};
@@ -343,51 +354,55 @@ static int dynamic_block(inflate_t *inf)
         lengths[order[i]] = read_bits(inf, 3);
     }
 
-    build_huffman_tree(&len_tree, lengths, 19);
+    huffman_build_tree(&lenCodes, lengths, 19);
 
     int i = 0;
     while (i < nlen + ndist)
     {
-        int symbole = huffman_decode_symbole(inf, &len_tree);
-        if (symbole < 0)
+        short sym = 0;
+
+        if (huffman_decodeSym(inf, &lenCodes, &sym))
         {
-            fprintf(stderr, "error decoding dyn symbol [%d]\n", symbole);
-            return -1;
+            inf->error = sym;
+            inf_error(inf, "error decoding dyn symbol");
+            return;
         }
 
-        if (symbole < 16)
+        if (sym < 16)
         {
-            lengths[i++] = symbole;
+            lengths[i++] = sym;
         }
         else
         {
             int len = 0;
-            if (symbole == 16)
+            if (sym == 16)
             {
                 if (i == 0)
                 {
                     fprintf(stderr, "error '0'");
-                    return -1;
+                    inf_error(inf, "error dyn start");
+                    return;
                 }
                 len = lengths[i - 1];
-                symbole = 3 + read_bits(inf, 2);
+                sym = 3 + read_bits(inf, 2);
             }
-            else if (symbole == 17)
+            else if (sym == 17)
             {
-                symbole = 3 + read_bits(inf, 3);
+                sym = 3 + read_bits(inf, 3);
             }
             else
             {
-                symbole = 11 + read_bits(inf, 7);
+                sym = 11 + read_bits(inf, 7);
             }
 
-            if (i + symbole > nlen + ndist)
+            if (i + sym > nlen + ndist)
             {
-                fprintf(stderr, "too many symbols %d\n", i + symbole);
-                return -1;
+                inf->error = i + sym;
+                inf_error(inf, "too many symbols");
+                return;
             }
 
-            while (symbole--)
+            while (sym--)
             {
                 lengths[i++] = len;
             }
@@ -396,30 +411,33 @@ static int dynamic_block(inflate_t *inf)
 
     if (lengths[256] == 0)
     {
-        fprintf(stderr, "no end of block\n");
-        return -1;
+        inf->error = -1;
+        inf_error(inf, "no end of block");
+        return;
     }
 
-    build_huffman_tree(&len_tree, lengths, nlen);
-    if (nlen - len_tree.count[0] == 1)
+    huffman_build_tree(&lenCodes, lengths, nlen);
+    if (nlen - lenCodes.count[0] == 1)
     {
-        fprintf(stderr, "error: nlen:%i len_tree.count[0]:%i\n", nlen, len_tree.count[0]);
-        return -1;
+        fprintf(stderr, "error: nlen:%i lenCodes.count[0]:%i", nlen, lenCodes.count[0]);
+        inf->error = 15;
+        return;
     }
 
-    build_huffman_tree(&dist_tree, lengths + nlen, ndist);
-    if (ndist - dist_tree.count[0] == 1)
+    huffman_build_tree(&distCodes, lengths + nlen, ndist);
+    if (ndist - distCodes.count[0] == 1)
     {
-        fprintf(stderr, "error: ndist:%i dist_tree.count[0]:%i\n", ndist, dist_tree.count[0]);
-        return -1;
+        fprintf(stderr, "error: ndist:%i distCodes.count[0]:%i", ndist, distCodes.count[0]);
+        inf->error = 16;
+        return;
     }
 
-    return inflate_codes(inf, &len_tree, &dist_tree);
+    inf->error = inflateCodes(inf, &lenCodes, &distCodes);
 }
 
 int inflate(inflate_t *inf)
 {
-    if (!inf->window)
+    if(!inf->window)
     {
         inf->winsize = 32768;
         inf->window = calloc(inf->winsize, sizeof(uint8_t));
@@ -436,19 +454,23 @@ int inflate(inflate_t *inf)
         switch (type)
         {
         case 0:
-            uncompressed_block(inf);
+            inf_uncompressed(inf);
             break;
         case 1:
-            fixed_block(inf);
+            inf_fixed(inf);
             break;
         case 2:
-            dynamic_block(inf);
+            inf_dynamic(inf);
             break;
         default:
-            assert(0);
+            inf->error = type;
+            inf_error(inf, "inavalide method");
             break;
         }
 
+        if (inf->error)
+            break;
     } while (done == 0);
-    return 0;
+    fprintf(stderr, "complet :: %d", inf->error);
+    return inf->error;
 }

@@ -52,6 +52,11 @@ rect_t *new_rect(int x, int y, int w, int h)
     return r;
 }
 
+rect_t *alloc_rect(rect_t *r)
+{
+    return new_rect(r->x, r->y, r->w, r->h);
+}
+
 int rect_intersects(rect_t r1, rect_t r2)
 {
     if (r_left(r1) <= r_right(r2) &&
@@ -101,4 +106,98 @@ rect_t rect_chrenk(rect_t r, int top, int bottom, int left, int right)
     rect_t rect = Rectangle(r.x + left, r.y + bottom, r.w - (right + left), r.h - (bottom + top));
 
     return rect;
+}
+
+int rect_is_valide(rect_t *r)
+{
+    if (r->w <= 0 || r->h <= 0)
+        return -1;
+    return 0;
+}
+
+int split_rects(rect_t rect, rect_t cutter, list_t *clips)
+{
+    if (!rect_intersects(rect, cutter))
+    {
+        return 0;
+    }
+
+    rect_t top;
+
+    if (cutter.y > rect.y)
+    {
+        top.y = rect.y;
+        top.h = cutter.y - rect.y;
+        top.x = rect.x;
+        top.w = rect.w;
+    }
+    else
+    {
+        top.y = cutter.y;
+        top.h = rect.y - cutter.y;
+        top.x = cutter.x;
+        top.w = cutter.w;
+    }
+
+    rect_t bottom;
+    if (r_bottom(cutter) > r_bottom(rect))
+    {
+        bottom.y = r_bottom(rect);
+        bottom.h = r_bottom(cutter) - r_bottom(rect);
+
+        bottom.x = cutter.x;
+        bottom.w = cutter.w;
+    }
+    else
+    {
+        bottom.y = r_bottom(cutter);
+        bottom.h = r_bottom(rect) - r_bottom(cutter);
+
+        bottom.x = rect.x;
+        bottom.w = rect.w;
+    }
+
+    rect_t left;
+    if (cutter.x > rect.x)
+    {
+        left.x = rect.x;
+        left.w = cutter.x - rect.x;
+    }
+    else
+    {
+        left.x = cutter.x;
+        left.w = rect.x - cutter.x;
+    }
+    left.y = max(cutter.y, rect.y);
+    left.h = bottom.y - left.y;
+
+    rect_t right;
+    right.x = r_right(left);
+    right.w = max(r_right(rect), r_right(cutter)) - right.x;
+    right.y = left.y;
+    right.h = left.h;
+
+    int pieces = 0;
+    if (!rect_is_valide(&top))
+    {
+        list_prepend(clips, alloc_rect(&top));
+        pieces++;
+    }
+    if (!rect_is_valide(&bottom))
+    {
+        list_prepend(clips, alloc_rect(&bottom));
+        pieces++;
+    }
+    if (!rect_is_valide(&left))
+    {
+        list_prepend(clips, alloc_rect(&left));
+        pieces++;
+    }
+    if (!rect_is_valide(&right))
+    {
+        list_prepend(clips, alloc_rect(&right));
+        pieces++;
+    }
+
+    return pieces;
 }

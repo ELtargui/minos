@@ -167,7 +167,9 @@ void mm_page_fault(regs_t *r)
 
     int tid = current_thread() ? current_thread()->id : 0;
     int pid = current_process() ? current_process()->pid : 0;
-    printf("[%d/%d]page fault @%p eip:%p [p:%d rw:%d u:%d kernel:%d cr3:%p]\n", pid, tid,
+    char *name = current_process() ? current_process()->name : NULL;
+    
+    printf("[(%s)%d/%d]page fault @%p eip:%p [p:%d rw:%d u:%d kernel:%d cr3:%p]\n", name, pid, tid,
            address, r->eip, present, rw, user, in_kernel, vmdirp);
 
     if (in_kernel)

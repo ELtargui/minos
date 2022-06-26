@@ -52,6 +52,11 @@ window_t *new_window(app_t *app, int w, int h, int frameless)
     win->color = color_u32(0xffffffff);
     win->fonts = new_list();
 
+    if (!frameless)
+    {
+        win->frame = init_window_frame(win);
+    }
+
     container_t *container = new_container(NULL, 0);
     window_set_root_widget(win, &container->widget);
 
@@ -104,6 +109,26 @@ void window_set_position(window_t *win, int x, int y)
 {
     win->rect.x = x;
     win->rect.y = y;
+    if (win->visible)
+    {
+        msg_win_move_t msg;
+        msg.winid = win->win_id;
+        msg.x = x;
+        msg.y = y;
+        app_send_msg(win->app, WINDOW_MOVE_TO, &msg, sizeof(msg_win_move_t));
+    }
+}
+
+void window_update_position(window_t *win, msg_win_position_t *pos)
+{
+    win->rect.x = pos->x;
+    win->rect.y = pos->y;
+}
+
+void window_set_visible(window_t *win, int visible)
+{
+    printf("win %p set visible:%d\n", win, visible);
+    win->visible = visible;
 }
 
 void window_set_size(window_t *win, int w, int h)
@@ -118,13 +143,24 @@ void window_set_backgound_color(window_t *win, color_t color)
     surface_fill(win->surface, win->color);
 }
 
+void window_hide(window_t *win)
+{
+    msg_show_window_t msg;
+    msg.rect = win->rect;
+    msg.winid = win->win_id;
+    app_send_msg(win->app, WINDOW_HIDE, &msg, sizeof(msg_show_window_t));
+}
+
 void window_show(window_t *win)
 {
+    if (win->frame)
+        widget_paint(&win->frame->widget);
+
+    assert(win->root);
     widget_paint(win->root);
 
     msg_show_window_t msg;
     msg.rect = win->rect;
-    msg.frameless = win->frameless;
     msg.winid = win->win_id;
     app_send_msg(win->app, WINDOW_SHOW, &msg, sizeof(msg_show_window_t));
 }
@@ -144,8 +180,15 @@ void window_set_info()
 
 void win_handle_mouse(window_t *win, ipc_event_t event, msg_mouse_event_t *msg)
 {
-    widget_t *w = widget_at_position(win->root, msg->x, msg->y);
-    if (w != win->hovered)
+    widget_t *w = win->root;
+    if (!win->frameless && point_in_rect(msg->x, msg->y, win->root->r))
+    {
+        w = &win->frame->widget;
+    }
+
+    w = widget_at_position(w, msg->x, msg->y);
+
+    if (w != win->hovered && w != &win->frame->widget)
     {
         if (win->hovered)
         {
@@ -192,15 +235,26 @@ void win_handle_msg(app_t *app, ipc_msg_t *msg)
     case MOUSE_RELEASE:
         win_handle_mouse(win, event, (msg_mouse_event_t *)msg->data);
         break;
-
     case WIN_ENTER:
-        // printf("win enter:%p\n", win);
+        if (win->frame)
+        {
+            widget_enter(&win->frame->widget);
+        }
         break;
     case WIN_LEAVE:
-        // printf("win leave:%p\n", win);
+        if (win->frame)
+        {
+            widget_leave(&win->frame->widget);
+        }
         break;
     case WINDOW_SET_INFO:
         window_set_info(win, (msg_window_info_t *)msg->data);
+        break;
+    case WINDOW_POSITION:
+        window_update_position(win, (msg_win_position_t *)msg->data);
+        break;
+    case WINDOW_SET_VISIBLE:
+        window_set_visible(win, ((msg_set_value_t *)msg->data)->value_int);
         break;
     default:
         printf("gui[%x:%d]:unhandled event %d\n", app->app_id, win->win_id, event);
@@ -210,8 +264,32 @@ void win_handle_msg(app_t *app, ipc_msg_t *msg)
 
 void window_set_root_widget(window_t *win, widget_t *widget)
 {
-    widget->r = Rectangle(0, 0, win->rect.w, win->rect.h);
+    if (win->frame)
+    {
+        widget->r = Rectangle(1, win->frame->height, win->rect.w - 2, win->rect.h - win->frame->height - 1);
+    }
+    else
+    {
+        widget->r = Rectangle(0, 0, win->rect.w, win->rect.h);
+    }
+
     widget->surface = win->surface;
     win->root = widget;
     widget->win = win;
+}
+
+void window_start_move(window_t *win)
+{
+    msg_win_move_t msg;
+    msg.winid = win->win_id;
+    msg.x = win->rect.x;
+    msg.y = win->rect.y;
+    app_send_msg(win->app, WINDOW_START_MOVE, &msg, sizeof(msg_win_move_t));
+}
+
+void window_end_move(window_t *win)
+{
+    msg_win_move_t msg;
+    msg.winid = win->win_id;
+    app_send_msg(win->app, WINDOW_END_MOVE, &msg, sizeof(msg_win_move_t));
 }

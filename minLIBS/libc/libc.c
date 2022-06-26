@@ -4,7 +4,6 @@
 #include <stdio.h>
 #include <pthread.h>
 
-char **environ = NULL;
 FILE *stdin, *stdout, *stderr;
 static FILE *libc_files_list = NULL;
 

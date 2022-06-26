@@ -24,7 +24,7 @@ void abort(void);
 //int abs(int);
 int atexit(void (*)(void));
 //double atof(const char *);
-//int atoi(const char *);
+int atoi(const char *);
 //long atol(const char *);
 //long long atoll(const char *);
 //void *bsearch(const void *, const void *, size_t, size_t, int (*)(const void *, const void *));
@@ -35,7 +35,6 @@ void __attribute__((malloc)) * valloc(size_t);
 //double erand48(unsigned short[3]);
 void exit(int);
 void free(void *);
-//char *getenv(const char *);
 //int getsubopt(char **, char *const *, char **);
 //int grantpt(int);
 //char *initstate(unsigned, char *, size_t);
@@ -59,7 +58,6 @@ void __attribute__((malloc)) * malloc(size_t);
 //int posix_memalign(void **, size_t, size_t);
 //int posix_openpt(int);
 //char *ptsname(int);
-//int putenv(char *);
 
 void qsort(void *ptr, size_t num_elements, size_t element_size, int (*compare)(const void *, const void *));
 //int rand(void);
@@ -69,7 +67,12 @@ void qsort(void *ptr, size_t num_elements, size_t element_size, int (*compare)(c
 void __attribute__((malloc)) * realloc(void *, size_t);
 //char *realpath(const char *, char *);
 //unsigned short *seed48(unsigned short[3]);
-//int setenv(const char *, const char *, int);
+
+int putenv(char *string);
+char *getenv(const char *name);
+int setenv(const char *envname, const char *envval, int overwrite);
+int unsetenv(const char *name);
+
 //void setkey(const char *);
 //char *setstate(char *);
 //void srand(unsigned);
@@ -86,6 +89,5 @@ double strtod(const char *nptr, char **endptr);
 //unsigned long long strtoull(const char *, char **, int);
 //int system(const char *);
 //int unlockpt(int);
-//int unsetenv(const char *);
 //size_t wcstombs(char *, const wchar_t *, size_t);
 //int wctomb(char *, wchar_t);

@@ -45,7 +45,7 @@ int main(int argc, char const *argv[])
     }
     printf("files \n");
 
-    window_t *win = new_window(app, fb_info.width, fb_info.hieght, 0);
+    window_t *win = new_window(app, fb_info.width, fb_info.hieght, 1);
     assert(win);
     close(fb);
 
@@ -61,7 +61,7 @@ int main(int argc, char const *argv[])
     if (!fork())
     {
         const char *args[] = {
-            "/bin/about",
+            "/bin/taskbar",
             NULL,
         };
 
@@ -69,15 +69,6 @@ int main(int argc, char const *argv[])
         assert(0);
     }
 
-    // if (!fork())
-    // {
-    //     const char *args[] = {
-    //         "/bin/calculator",
-    //         NULL,
-    //     };
-
-    //     execve(args[0], args, NULL);
-    //     assert(0);
-    // }
+   
     return app_main(app);
 }

@@ -255,6 +255,23 @@ int sys_lseek(int fd, off_t offset, int whence)
     return file->offset;
 }
 
+int sys_dup(int oldfd)
+{
+    return file_dup(oldfd);
+}
+
+int sys_dup3(int old, int new, int flags)
+{
+    return file_dup3(old, new, flags);
+}
+
+extern int pipe(int fds[2], int flags);
+
+int sys_pipe2(int pipefd[2], int flags)
+{
+    return pipe(pipefd, flags);
+}
+
 static int (*sys_table[])() = {
     [SYS_exit] = sys_exit,
     [SYS_open] = sys_open,
@@ -285,6 +302,9 @@ static int (*sys_table[])() = {
     [SYS_fstat] = sys_fstat,
     [SYS_lstat] = sys_linkstat,
     [SYS_lseek] = sys_lseek,
+    [SYS_dup] = sys_dup,
+    [SYS_dup3] = sys_dup3,
+    [SYS_pipe2] = sys_pipe2,
 };
 
 void sys_handler(regs_t *r)

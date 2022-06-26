@@ -49,6 +49,12 @@ void set_mouse_pos(int x, int y)
     mouse_y = y;
 }
 
+void get_mouse_pos(int *x, int *y)
+{
+    *x = mouse_x;
+    *y = mouse_y;
+}
+
 s_window_t *top_window_in_pos(int x, int y)
 {
     pthread_mutex_lock(&stack_mutex);
@@ -84,7 +90,7 @@ void screen_redraw_rect(rect_t r)
     }
     pthread_mutex_unlock(&stack_mutex);
 }
- 
+
 void *compositor(void *arg)
 {
     (void)arg;
@@ -191,8 +197,8 @@ gfx_t *start_compositor()
     pthread_mutex_init(&stack_mutex, NULL);
 
     mouse_shape = load_png("/usr/share/cursor/normal.png");
-    mouse_x = gfx->w / 2;
-    mouse_y = gfx->h / 2;
+    set_mouse_pos(gfx->w / 2, gfx->h / 2);
+
     pthread_t t;
     if (pthread_create(&t, NULL, compositor, gfx) == -1)
     {

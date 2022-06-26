@@ -27,3 +27,17 @@ off_t lseek(int fd, off_t offset, int whence);
 
 int truncate(const char *path, off_t length);
 int ftruncate(int fd, off_t length);
+
+int dup(int fd);
+int dup2(int old, int new);
+int dup3(int old, int new, int flags);
+
+int pipe(int fildes[2]);
+int pipe2(int fildes[2], int flags);
+
+int execl(const char *path, const char *arg0, ... /*, (char *)0 */);
+int execle(const char *path, const char *arg0, ... /*,(char *)0, char *const envp[]*/);
+int execlp(const char *file, const char *arg0, ... /*, (char *)0 */);
+int execv(const char *path, const char **argv);
+int execvp(const char *file, const char **argv);
+int fexecve(int fd, const char **argv, const char **envp);

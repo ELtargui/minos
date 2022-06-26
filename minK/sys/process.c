@@ -114,6 +114,7 @@ void free_process(process_t *process)
 
     free(process->vmdir);
     free(process->files.fds);
+    free(process->files.flags);
     list_remove(process_table, process);
     free(process);
 }
@@ -417,14 +418,14 @@ int fork()
     child->files.cap = parent->files.cap;
     child->files.count = parent->files.count;
     child->files.fds = calloc(child->files.cap, sizeof(filedescriptor_t));
+    child->files.flags = calloc(child->files.cap, sizeof(int));
 
     for (int i = 0; i < parent->files.cap; i++)
     {
-        if (parent->files.fds[i].node)
+        if (parent->files.fds[i])
         {
-            child->files.fds[i] = parent->files.fds[i];
-            fsnode_open(parent->files.fds[i].node, parent->files.fds[i].flags);
-            child->files.fds[i].node = parent->files.fds[i].node;
+            child->files.fds[i] = file_clone(parent, i);
+            child->files.flags[i] = parent->files.flags[i];
         }
     }
 

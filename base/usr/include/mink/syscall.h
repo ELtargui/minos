@@ -33,4 +33,7 @@ typedef enum SYS_call
     SYS_stat,
     SYS_fstat,
     SYS_lstat,
+    SYS_pipe2,
+    SYS_dup,
+    SYS_dup3,
 } SYS_call_t;

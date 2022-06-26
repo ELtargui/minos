@@ -58,8 +58,9 @@ void assert_failed(const char *file, int line, const char *func, const char *exp
 {
     CLI();
     thread_t *thread = current_thread();
+    char *name = current_process() ? current_process()->name : NULL;
     if (thread)
-        printf("\n\nAssertion failed  [%d][%s:%d in %s()] : \033[31m%s\033[m\n", thread->id, file, line, func, expression);
+        printf("\n\nAssertion failed  [(%s)%d][%s:%d in %s()] : \033[31m%s\033[m\n", name, thread->id, file, line, func, expression);
     else
         printf("\n\nAssertion failed  [%s:%d in %s()] : \033[31m%s\033[m\n", file, line, func, expression);
 

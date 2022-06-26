@@ -31,6 +31,8 @@ BIN :=	base/bin/init \
 		base/bin/hello \
 		base/bin/about \
 		base/bin/calculator \
+		base/bin/taskbar \
+		base/bin/menu \
 		base/bin/files
 
 APPS:= $(BASE)/bin/wm 
@@ -97,6 +99,10 @@ base/bin/about:apps/about.c
 base/bin/calculator:apps/calculator.c
 	$(CC) $(CFLAGS) $< -o $@ -lgui -lgfx -lds -lcompress
 base/bin/files:apps/files.c
+	$(CC) $(CFLAGS) $< -o $@ -lgui -lgfx -lds -lcompress
+base/bin/taskbar:apps/taskbar.c
+	$(CC) $(CFLAGS) $< -o $@ -lgui -lgfx -lds -lcompress
+base/bin/menu:apps/menu.c
 	$(CC) $(CFLAGS) $< -o $@ -lgui -lgfx -lds -lcompress
 
 

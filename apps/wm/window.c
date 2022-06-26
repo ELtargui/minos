@@ -12,7 +12,8 @@
 #include "window.h"
 
 list_t *app_list = NULL;
-
+static s_window_t *sys_menu = NULL;
+static int sys_menu_visible = 0;
 app_t *app_from_id(uint32_t app_id)
 {
     foreach (app_list, n)
@@ -51,7 +52,7 @@ void handle_app_connect(uint32_t app_id)
     }
 }
 
-void handle_new_window(app_t *app, msg_show_window_t *msg)
+void handle_new_window(app_t *app, msg_new_window_t *msg)
 {
     s_window_t *win = calloc(1, sizeof(s_window_t));
 
@@ -117,6 +118,10 @@ void handle_window_show(app_t *app, s_window_t *win, msg_show_window_t *msg)
     win_show(win);
 }
 
+void handle_window_hide(s_window_t *win)
+{
+    win_hide(win);
+}
 void init_win()
 {
     app_list = new_list();
@@ -139,12 +144,35 @@ void win_redraw_rect(s_window_t *win, rect_t *r)
     list_append(win->rects, rect);
     pthread_mutex_unlock(&win->mutex);
 }
+void win_redraw(s_window_t *win)
+{
+    pthread_mutex_lock(&win->mutex);
+    rect_t *rect = new_rect(0, 0, win->surface->w, win->surface->h);
+    while (win->rects->head)
+    {
+        list_node_t *n = list_take_first_node(win->rects);
+
+        free(n->value);
+        free(n);
+    }
+
+    list_append(win->rects, rect);
+    pthread_mutex_unlock(&win->mutex);
+}
 
 void win_show(s_window_t *win)
 {
-    rect_t r = win_self_rect(win);
-    win_redraw_rect(win, &r);
+    win_redraw(win);
     stack_add_window(win);
+    win_send_value_int(win, WINDOW_SET_VISIBLE, 1);
+}
+
+void win_send_value_int(s_window_t *win, ipc_event_t event, int value)
+{
+    msg_set_value_t msg;
+    msg.winid = win->win_id;
+    msg.value_int = value;
+    app_send_msg_to(server_app, win->app->app_id, WIN_ENTER, &msg, sizeof(msg_head_t));
 }
 
 void win_hide(s_window_t *win)
@@ -152,6 +180,8 @@ void win_hide(s_window_t *win)
     pthread_mutex_lock(&win->mutex);
     stack_remove_window(win);
     pthread_mutex_unlock(&win->mutex);
+    win_send_value_int(win, WINDOW_SET_VISIBLE, 0);
+    screen_redraw_rect(win_rect(win));
 }
 
 void win_enter(s_window_t *win)
@@ -173,3 +203,50 @@ void win_leave(s_window_t *win)
         assert(0);
     }
 }
+
+void win_start_move(s_window_t *win, msg_win_move_t *msg)
+{
+    set_moving_window(win);
+}
+
+void win_end_move(s_window_t *win)
+{
+    if (win != get_moving_window())
+    {
+        printf("error :end window move [%p moving:%p]\n", win, get_moving_window());
+    }
+    assert(win == get_moving_window());
+    set_moving_window(NULL);
+}
+
+void win_move_to(s_window_t *win, int x, int y)
+{
+    rect_t r = win_rect(win);
+    win->x = x;
+    win->y = y;
+    screen_redraw_rect(r);
+    win_redraw(win);
+}
+
+void win_set_system_menu(s_window_t *win)
+{
+    if (sys_menu)
+    {
+        msg_sys_menu_t msg;
+        msg.accepted = 0;
+        msg.error = 1;
+        if (app_send_msg_to(server_app, win->app->app_id, SYS_MENU, &msg, sizeof(msg_sys_menu_t)))
+        {
+            assert(0);
+        }
+    }
+    sys_menu = win;
+    msg_sys_menu_t msg;
+    msg.accepted = 1;
+    msg.error = 0;
+    if (app_send_msg_to(server_app, win->app->app_id, SYS_MENU, &msg, sizeof(msg_sys_menu_t)))
+    {
+        assert(0);
+    }
+}
+

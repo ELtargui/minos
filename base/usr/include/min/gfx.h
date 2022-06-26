@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 #include <min/list.h>
+#include <gfx/rect.h>
 
 typedef struct point
 {
@@ -14,15 +15,6 @@ typedef struct Size
     int w;
     int h;
 } Size_t;
-
-typedef struct rect
-{
-    int x;
-    int y;
-
-    int w;
-    int h;
-} rect_t;
 
 typedef union color
 {
@@ -80,9 +72,12 @@ void gfx_blit_rect(gfx_t *g, rect_t *r);
 
 rect_t Rectangle(int x, int y, int w, int h);
 rect_t *new_rect(int x, int y, int w, int h);
+rect_t *alloc_rect(rect_t *r);
+int rect_is_valide(rect_t *r);
 rect_t rect_get_intersection(rect_t r1, rect_t r2);
 rect_t rect_chrenk(rect_t r, int top, int bottom, int left, int right);
 int point_in_rect(int x, int y, rect_t r);
+int split_rects(rect_t rect, rect_t cutter, list_t *clips);
 
 gfx_t *surface_gfx(surface_t *surface);
 

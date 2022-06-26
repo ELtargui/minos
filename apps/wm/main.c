@@ -17,7 +17,11 @@ int kbd_fd;
 int ipc_fd;
 int g_running = 1;
 app_t *server_app;
-static gfx_t *gfx = NULL;
+gfx_t *gfx = NULL;
+
+static s_window_t *moving_window;
+static int move_dx = 0;
+static int move_dy = 0;
 
 static int min(int a, int b)
 {
@@ -27,6 +31,26 @@ static int min(int a, int b)
 static int max(int a, int b)
 {
     return a > b ? a : b;
+}
+
+void set_moving_window(s_window_t *win)
+{
+    if (win)
+    {
+        int mx, my;
+        get_mouse_pos(&mx, &my);
+
+        move_dx = mx - win->x;
+        move_dy = my - win->y;
+        printf("%p init moving dx:%d dy:%d [%d,%d]\n", win, move_dx, move_dy, win->x, win->y);
+    }
+    printf("set moving_window=%p\n", win);
+    moving_window = win;
+}
+
+s_window_t *get_moving_window()
+{
+    return moving_window;
 }
 
 void send_mouse_event(s_window_t *win, ipc_event_t e, int x, int y, int btn)
@@ -43,6 +67,9 @@ void send_mouse_event(s_window_t *win, ipc_event_t e, int x, int y, int btn)
     }
 }
 
+static int m_x = 0;
+static int m_y = 0;
+
 void handle_mouse()
 {
     mouse_packet_t mp;
@@ -53,11 +80,8 @@ void handle_mouse()
     }
     assert(mp.magic = MOUSE_MAGIC);
 
-    static int m_x = 0;
-    static int m_y = 0;
     static int m_btn = 0;
     static s_window_t *win = NULL;
-    s_window_t *tmp = NULL;
     int is_mouving = 0;
     if (mp.dx || mp.dy)
     {
@@ -66,21 +90,25 @@ void handle_mouse()
         is_mouving = 1;
         set_mouse_pos(m_x, m_y);
     }
-    tmp = top_window_in_pos(m_x, m_y);
-    if (win != tmp)
+    if (!moving_window)
     {
-        if (win)
+        s_window_t *tmp = top_window_in_pos(m_x, m_y);
+        if (win != tmp)
         {
-            // leave
-            // printf("leave::%p\n", win);
-            win_leave(win);
-        }
-        win = tmp;
-        if (win)
-        {
-            // enter
-            // printf("enter::%p\n", win);
-            win_enter(win);
+            if (moving_window && moving_window != win)
+                if (win)
+                {
+                    // leave
+                    // printf("leave::%p\n", win);
+                    win_leave(win);
+                }
+            win = tmp;
+            if (win)
+            {
+                // enter
+                // printf("enter::%p\n", win);
+                win_enter(win);
+            }
         }
     }
 
@@ -122,7 +150,11 @@ void handle_mouse()
         m_btn = mp.btn;
     }
 
-    if (is_mouving && win)
+    if (moving_window)
+    {
+        win_move_to(moving_window, m_x - move_dx, m_y - move_dy);
+    }
+    else if (is_mouving && win)
     {
         //move
         send_mouse_event(win, MOUSE_MOVE, x, y, mp.btn);
@@ -136,7 +168,7 @@ void handle_kbd()
     {
         assert(0 && "read kbd");
     }
-    printf("kbd\n");
+    printf("kbd %d\n", scancode);
 }
 
 void handle_ipc()
@@ -163,7 +195,7 @@ void handle_ipc()
         handle_app_connect(msg->id);
         break;
     case NEW_WINDOW:
-        handle_new_window(app, (msg_show_window_t *)msg->data);
+        handle_new_window(app, (msg_new_window_t *)msg->data);
         break;
     case WINDOW_RECT:
         handle_window_flush_rect(app, (msg_window_flush_rect_t *)msg->data);
@@ -172,10 +204,34 @@ void handle_ipc()
         assert(win);
         handle_window_show(app, win, (msg_show_window_t *)msg->data);
         break;
+    case WINDOW_HIDE:
+        assert(win);
+        handle_window_hide(win);
+        break;
+    case WINDOW_START_MOVE:
+        win_start_move(win, (msg_win_move_t *)msg->data);
+        break;
+    case WINDOW_END_MOVE:
+        win_end_move(win);
+        break;
+    case WINDOW_MOVE_TO:
+    {
+        printf("request move from client\n");
+        msg_win_move_t *move = (msg_win_move_t *)msg->data;
+        win_move_to(win, move->x, move->y);
+    }
+    break;
+    case SYS_MENU:
+        win_set_system_menu(win);
+        break;
     default:
         printf("unhandled ipc event :: %d\n", msg->event);
         break;
     }
+}
+
+void spawn_sysmenu()
+{
 }
 
 int main(int argc, const char *argv[])
@@ -211,6 +267,8 @@ int main(int argc, const char *argv[])
     init_win();
     gfx = start_compositor();
     assert(gfx);
+
+    get_mouse_pos(&m_x, &m_y);
 
     {
         int child = fork();

@@ -61,8 +61,8 @@ typedef struct thread
 typedef struct filedescriptor
 {
     fsnode_t *node;
-    int flags;
     off_t offset;
+    int ref;
 } filedescriptor_t;
 
 typedef struct process
@@ -83,7 +83,8 @@ typedef struct process
     {
         int cap;
         int count;
-        filedescriptor_t *fds;
+        filedescriptor_t **fds;
+        int *flags;
     } files;
 
     vmdir_t *vmdir;
@@ -141,7 +142,7 @@ void thread_exit(thread_t *thread);
 void thread_exit_self();
 int nanosleep(const struct timespec *req, struct timespec *rem);
 
-int fd_alloc(process_t *process, fsnode_t *node);
+int fd_alloc(process_t *process, fsnode_t *node, int flags);
 filedescriptor_t *fd_get(process_t *process, int fd);
 
 int file_open(const char *filename, int flags, int mode);
@@ -153,7 +154,9 @@ int file_ioctl(int fd, int cmd, void *a, void *b);
 int file_truncate(const char *name, off_t length);
 int file_fdtruncate(int fd, off_t length);
 int file_map(int fd, struct region *region, off_t offset, size_t len);
-
+int file_dup(int old);
+int file_dup3(int old, int new, int flags);
+filedescriptor_t *file_clone(process_t *process, int fd);
 
 thread_t *current_thread();
 process_t *current_process();

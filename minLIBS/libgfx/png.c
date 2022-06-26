@@ -16,10 +16,10 @@ typedef struct png
     uint8_t compression;
     uint8_t interlace;
 
-    int compressedSize;
+    int idat_size;
     int streamPos;
-    uint8_t *data;
-    uint32_t data_offset;
+    uint8_t *idat_data;
+    uint32_t idat_offset;
 
     int scanlineFilter;
     int linePos;
@@ -84,14 +84,14 @@ static uint32_t read_32be(png_t *png)
 static int png_read(void *p)
 {
     png_t *png = p;
-    if (png->streamPos > png->compressedSize)
+    if (png->streamPos > png->idat_size)
     {
         png->error = 1;
         assert(0 && "out of compressed data");
         return -1;
     }
-    assert(png->data);
-    return png->data[png->streamPos++];
+    assert(png->idat_data);
+    return png->idat_data[png->streamPos++];
 }
 
 static int png_write(void *ctx, int x)
@@ -138,16 +138,14 @@ static void png_ihdr(png_t *png, int length)
 
 static void png_idat(png_t *png, int length)
 {
-    if (png->data == NULL)
+    if (png->idat_data == NULL)
     {
-        png->data = malloc(png->compressedSize);
-
-        // fprintf(stderr, "img compressed %p :: %d\n", png->data, png->compressedSize);
+        png->idat_data = malloc(png->idat_size);
+        assert(png->idat_data);
     }
-    // fprintf(stderr, "read idate chuck %d\n", length);
-    assert(png->data);
-    uint8_t *data = png->data + png->data_offset;
-    png->data_offset += length;
+
+    uint8_t *data = png->idat_data + png->idat_offset;
+    png->idat_offset += length;
 
     for (int i = 0; i < length; i++)
     {
@@ -218,7 +216,7 @@ static void png_decode(png_t *png)
 clean:
     free(png->scanline);
     free(png->prev_scanline);
-    free(png->data);
+    free(png->idat_data);
 }
 
 png_t *png_open(const char *file)
@@ -268,7 +266,7 @@ png_t *png_open(const char *file)
             done = 1;
             break;
         case IDAT:
-            png->compressedSize += length;
+            png->idat_size += length;
             png_skipChunk(png, type, length);
             break;
         default:
@@ -467,6 +465,9 @@ static void unfilter_scanline(png_t *png)
     }
 
     png->scanlineFilter = -1;
-    memcpy((void *)png->prev_scanline, (void *)png->scanline, png->width * 4);
+    // memcpy((void *)png->prev_scanline, (void *)png->scanline, png->width * 4);
+    void *tmp = png->prev_scanline;
+    png->prev_scanline =png->scanline;
     memcpy((void *)((char *)png->pixels + png->width * png->py * 4), (void *)png->scanline, png->width * 4);
+    png->scanline = tmp;
 }

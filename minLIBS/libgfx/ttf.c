@@ -195,7 +195,7 @@ static int process_scanline(line_t *lines, int count, float y, x_intersection_t 
 
 void fill_glyph(shape_t *shape, float xmin, float xmax, float ymin, float ymax, surface_t *img, uint32_t color)
 {
-    color = color & 0x00ffffff;
+    // color = color & 0x00ffffff;
     color_t c_rgba = color_u32(color);
 
     ymin = ymin < 0 ? 0 : ymin;

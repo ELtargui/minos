@@ -120,7 +120,21 @@ void gfx_add_clip(gfx_t *g, rect_t *clip)
     if (w <= 0 || h <= 0)
         return;
 
-    list_append(g->clips, new_rect(x, y, w, h));
+    rect_t *cutter = new_rect(x, y, w, h);
+    int append = 1;
+    foreach (g->clips, n)
+    {
+        rect_t *r = n->value;
+        if (split_rects(*r, *cutter, g->clips))
+        {
+            append = 0;
+            list_remove_node(g->clips, n);
+            free(n);
+            free(r);
+        }
+    }
+    if (append)
+        list_prepend(g->clips, cutter);
 }
 
 void gfx_blit_clips(gfx_t *g)
@@ -149,48 +163,48 @@ void gfx_draw_surface_alpha(gfx_t *g, int destx, int desty, surface_t *surface)
 
 void gfx_draw_surface_rect(gfx_t *g, int destx, int desty, surface_t *surface, rect_t *r)
 {
-    int start_x = destx;
-    int start_y = desty;
-    int end_x = min(g->w, destx + r->w);
-    int end_y = min(g->h, desty + r->h);
+    int dx = max(0, destx);
+    int dy = max(0, desty);
+    int offx = dx - destx;
+    int offy = dy - desty;
+    int w = min(destx + r->w, g->w) - dx;
+    int h = min(desty + r->h, g->h) - dy;
 
-    int start_i = r->x;
-    int start_j = r->y;
-
-    int i = start_x, j = start_j;
-    for (int y = start_y; y < end_y; y++)
+    int sy = r->y + offy;
+    for (int y = dy; y < dy + h; y++)
     {
-        i = start_i;
-        for (int x = start_x; x < end_x; x++)
+        // int sx = r->x;
+        int sx = r->x + offx;
+        for (int x = dx; x < dx + w; x++)
         {
-            g->buffer[y * g->w + x] = surface->buffer[j * surface->w + i++];
+            g->buffer[y * g->w + x] = surface->buffer[sy * surface->w + sx];
+            // gfx_setpixel(g, x, y, surface_getpixel(surface, sx, sy));
+            sx++;
         }
-        j++;
+        sy++;
     }
 }
 
 void gfx_draw_surface_rect_alpha(gfx_t *g, int destx, int desty, surface_t *surface, rect_t *r)
 {
-    int start_x = destx;
-    int start_y = desty;
-    int end_x = min(g->w, destx + r->w);
-    int end_y = min(g->h, desty + r->h);
+    int dx = max(0, destx);
+    int dy = max(0, desty);
+    int offx = dx - destx;
+    int offy = dy - desty;
+    int w = min(destx + r->w, g->w) - dx;
+    int h = min(desty + r->h, g->h) - dy;
 
-    int start_i = r->x;
-    int end_i = min(r->x + r->w, surface->w);
-    int start_j = r->y;
-    int end_j = min(r->y + r->h, surface->h);
-
-    end_x = min(start_x + (end_i - start_i), end_x);
-    end_y = min(start_y + (end_j - start_j), end_y);
-    int i = start_x, j = start_j;
-    for (int y = start_y; y < end_y; y++)
+    int sy = r->y + offy;
+    for (int y = dy; y < dy + h; y++)
     {
-        i = start_i;
-        for (int x = start_x; x < end_x; x++)
+        // int sx = r->x;
+        int sx = r->x + offx;
+        for (int x = dx; x < dx + w; x++)
         {
-            gfx_setpixel(g, x, y, blend_pixel(surface_getpixel(surface, i++, j).raw, gfx_getpixel(g, x, y).raw));
+            gfx_setpixel(g, x, y, blend_pixel(surface_getpixel(surface, sx, sy).raw, gfx_getpixel(g, x, y).raw));
+
+            sx++;
         }
-        j++;
+        sy++;
     }
 }

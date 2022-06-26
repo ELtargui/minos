@@ -164,7 +164,7 @@ int shm_open(const char *name, int flags, int mode)
     }
 
     shm->refcount++;
-    return fd_alloc(current_process(), fsnode_from_shm(shm));
+    return fd_alloc(current_process(), fsnode_from_shm(shm), flags);
 }
 
 int shm_unlink(const char *name)

@@ -27,6 +27,7 @@ typedef struct s_file
     unsigned char buffer_type;
     unsigned char _u;
 
+    int popen_pid;
     pthread_mutex_t mutex;
 
     struct s_file *next;
@@ -93,8 +94,8 @@ ssize_t getline(char **, size_t *, FILE *);
 char *gets(char *);
 
 FILE *open_memstream(char **, size_t *);
-int pclose(FILE *);
-FILE *popen(const char *, const char *);
+int pclose(FILE * stream);
+FILE *popen(const char *command, const char *mode);
 
 int fprintf(FILE *, const char *, ...);
 void perror(const char *s);
@@ -131,3 +132,5 @@ int ungetc(int, FILE *);
 int vfscanf(FILE *, const char *, va_list);
 int vscanf(const char *, va_list);
 int vsscanf(const char *, const char *, va_list);
+
+FILE *popen(const char *command, const char *mode); 

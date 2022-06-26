@@ -7,7 +7,7 @@
 #include <mink/process.h>
 #include <errno.h>
 
-int fd_alloc(process_t *process, fsnode_t *node)
+int fd_alloc(process_t *process, fsnode_t *node, int flags)
 {
     if (process->files.count >= process->files.cap)
     {
@@ -15,20 +15,26 @@ int fd_alloc(process_t *process, fsnode_t *node)
         {
             int cap = process->files.cap;
             process->files.cap += 20;
-            process->files.fds = realloc(process->files.fds, process->files.cap * sizeof(filedescriptor_t));
+            process->files.fds = realloc(process->files.fds, process->files.cap * sizeof(filedescriptor_t *));
+            process->files.flags = realloc(process->files.flags, process->files.cap * sizeof(int));
             for (int i = cap; i < process->files.cap; i++)
             {
-                process->files.fds[i].node = NULL;
+                process->files.fds[i] = NULL;
+                process->files.flags[i] = 0;
             }
         }
     }
 
     for (int i = 0; i < process->files.cap; i++)
     {
-        if (process->files.fds[i].node == NULL)
+        if (process->files.fds[i] == NULL)
         {
-            process->files.fds[i].node = node;
-            process->files.fds[i].offset = 0;
+            filedescriptor_t *fdp = calloc(1, sizeof(filedescriptor_t));
+            fdp->node = node;
+            fdp->offset = 0;
+
+            process->files.fds[i] = fdp;
+            process->files.flags[i] = flags;
             process->files.count++;
             return i;
         }
@@ -45,13 +51,13 @@ filedescriptor_t *fd_get(process_t *process, int fd)
         return NULL;
     }
 
-    if (process->files.fds[fd].node == NULL)
+    if (process->files.fds[fd] == NULL)
     {
         // dbgln("inavalide fd:%d not opned", fd);
         return NULL;
     }
 
-    return &process->files.fds[fd];
+    return process->files.fds[fd];
 }
 
 int file_open(const char *filename, int flags, int mode)
@@ -79,7 +85,7 @@ int file_open(const char *filename, int flags, int mode)
         return -EEXIST;
     }
     fsnode_open(node, flags);
-    return fd_alloc(current_process(), node);
+    return fd_alloc(current_process(), node, flags);
 }
 
 int file_close(process_t *process, int fd)
@@ -90,14 +96,19 @@ int file_close(process_t *process, int fd)
         return -EBADF;
     }
 
-    if (process->files.fds[fd].node == NULL)
+    if (process->files.fds[fd] == NULL)
     {
         // dbgln("not open fd:%d", fd);
         return -EBADF;
     }
 
-    fsnode_close(process->files.fds[fd].node);
-    process->files.fds[fd].node = NULL;
+    fsnode_close(process->files.fds[fd]->node);
+
+    if (process->files.fds[fd]->ref <= 0)
+        free(process->files.fds[fd]);
+    else
+        process->files.fds[fd]->ref--;
+    process->files.fds[fd] = NULL;
     process->files.count--;
     return 0;
 }
@@ -213,7 +224,7 @@ int file_map(int fd, region_t *region, off_t offset, size_t size)
                 size &= PAGEMASK;
                 size += PAGESIZE;
             }
-            
+
             for (uintptr_t i = region->base; i < region->base + size; i += PAGESIZE)
             {
                 if (!vm_alloc_page(make_vmpage(process->vmdir, i), 1, region->writable))
@@ -239,4 +250,83 @@ int file_map(int fd, region_t *region, off_t offset, size_t size)
     }
 
     return -ENOSTR;
+}
+
+int file_dup(int old)
+{
+    filedescriptor_t *fdp = fd_get(current_process(), old);
+    if (!fdp)
+    {
+        return -EBADF;
+    }
+
+    process_t *process = current_process();
+
+    if (process->files.count >= process->files.cap)
+    {
+        if (process->files.cap < 100)
+        {
+            int cap = process->files.cap;
+            process->files.cap += 20;
+            process->files.fds = realloc(process->files.fds, process->files.cap * sizeof(filedescriptor_t *));
+            process->files.flags = realloc(process->files.flags, process->files.cap * sizeof(int));
+            for (int i = cap; i < process->files.cap; i++)
+            {
+                process->files.fds[i] = NULL;
+            }
+        }
+    }
+
+    for (int i = 0; i < process->files.cap; i++)
+    {
+        if (process->files.fds[i] == NULL)
+        {
+            process->files.fds[i] = fdp;
+            process->files.flags[i] = process->files.flags[old];
+            process->files.flags[i] &= ~O_CLOEXEC;
+            fdp->ref++;
+            return i;
+        }
+    }
+
+    return -ENFILE;
+}
+
+int file_dup3(int old, int new, int flags)
+{
+    filedescriptor_t *oldfdp = fd_get(current_process(), old);
+    if (!oldfdp)
+    {
+        return -EBADF;
+    }
+
+    if (old == new)
+        return new;
+
+    filedescriptor_t *newfdp = fd_get(current_process(), new);
+    if (new >= current_process()->files.cap)
+    {
+        return -EBADF;
+    }
+    if (newfdp)
+    {
+        file_close(current_process(), new);
+    }
+
+    current_process()->files.fds[new] = oldfdp;
+    oldfdp->ref++;
+    current_process()->files.flags[new] = current_process()->files.flags[old] | flags;
+    return new;
+}
+
+filedescriptor_t *file_clone(process_t *process, int fd)
+{
+    if (process->files.fds[fd] == NULL)
+        return NULL;
+    filedescriptor_t *fdp = calloc(1, sizeof(filedescriptor_t));
+    fdp->node = process->files.fds[fd]->node;
+    fdp->offset = process->files.fds[fd]->offset;
+    fsnode_open(fdp->node, process->files.flags[fd]);
+
+    return fdp;
 }
